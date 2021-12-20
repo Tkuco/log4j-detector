@@ -16,6 +16,7 @@ package com.mergebase.log4j;
 import static com.mergebase.log4j.VersionComparator.compare;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -23,6 +24,7 @@ import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -39,14 +41,9 @@ import java.util.TreeSet;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-import javax.swing.filechooser.FileSystemView;
-
 
 public class Log4JDetector {
 
-    private static final String TYPE_LOCAL_DISK_ENGLISH = "Local Disk";
-	private static final String TYPE_LOCAL_DISK_GERMAN = "Lokaler Datenträger";
-	
 	private static final String POM_PROPERTIES = "log4j-core/pom.properties".toLowerCase(Locale.ROOT);
     private static final String FILE_OLD_LOG4J = "log4j/DailyRollingFileAppender.class".toLowerCase(Locale.ROOT);
     private static final String FILE_LOG4J_1 = "core/LogEvent.class".toLowerCase(Locale.ROOT);
@@ -132,26 +129,14 @@ public class Log4JDetector {
                 }
             }
         }
+        argsList.addAll(stdinLines);
 
         if (argsList.isEmpty()) {
         	// scan all paths on windows
         	String osName = System.getProperty("os.name").toLowerCase();
-        	if (osName.contains("win")) {
-                FileSystemView fsv = FileSystemView.getFileSystemView();
-                
-                File[] drives = File.listRoots();
-                boolean localDiskFound = false;
-                if (drives != null && drives.length > 0) {
-                    for (File aDrive : drives) {
-                    	String driveType = fsv.getSystemTypeDescription(aDrive);
-                    	if (TYPE_LOCAL_DISK_GERMAN.equals(driveType) || TYPE_LOCAL_DISK_ENGLISH.equals(driveType)) {
-                        	localDiskFound = true;
-                    		argsList.add(aDrive.toString());
-                    	}
-                    }
-                }
-                
-                if (!localDiskFound) {
+        	if (osName.contains("win")) {                
+                argsList.addAll(getLocalHardDisks());
+                if (argsList.isEmpty()) {
                 	System.out.println("No local disk found to scan. Please use path argument for next scan, e.g. : c:\\");
                 	System.exit(102);
                 }
@@ -215,6 +200,21 @@ public class Log4JDetector {
 			}
         }
 
+    }
+    
+    private static List<String> getLocalHardDisks() throws IOException {
+		List<String> drives = new ArrayList<String>();
+		String line;
+		Process p = Runtime.getRuntime().exec("wmic logicaldisk where description=\"Local Fixed Disk\" get caption");
+		BufferedReader output = new BufferedReader(new InputStreamReader(p.getInputStream()));
+
+		while ((line = output.readLine()) != null) {
+			if (line.trim().endsWith(":")) {
+				drives.add(line.trim() + "\\");
+			}
+		}
+		output.close();
+		return drives;
     }
     
     private static void logToConsoleAndFile(String message) {
