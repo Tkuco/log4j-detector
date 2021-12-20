@@ -13,10 +13,14 @@
  */
 package com.mergebase.log4j;
 
+import static com.mergebase.log4j.VersionComparator.compare;
+
 import java.io.BufferedInputStream;
+import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -35,11 +39,15 @@ import java.util.TreeSet;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-import static com.mergebase.log4j.VersionComparator.compare;
+import javax.swing.filechooser.FileSystemView;
+
 
 public class Log4JDetector {
 
-    private static final String POM_PROPERTIES = "log4j-core/pom.properties".toLowerCase(Locale.ROOT);
+    private static final String TYPE_LOCAL_DISK_ENGLISH = "Local Disk";
+	private static final String TYPE_LOCAL_DISK_GERMAN = "Lokaler Datenträger";
+	
+	private static final String POM_PROPERTIES = "log4j-core/pom.properties".toLowerCase(Locale.ROOT);
     private static final String FILE_OLD_LOG4J = "log4j/DailyRollingFileAppender.class".toLowerCase(Locale.ROOT);
     private static final String FILE_LOG4J_1 = "core/LogEvent.class".toLowerCase(Locale.ROOT);
     private static final String FILE_LOG4J_2 = "core/Appender.class".toLowerCase(Locale.ROOT);
@@ -76,6 +84,8 @@ public class Log4JDetector {
     private static Set<String> excludes = new TreeSet<String>();
     private static boolean foundHits = false;
     private static boolean foundLog4j1 = false;
+	private static BufferedWriter out;
+	private static List<String> vulnerableFiles = new ArrayList<String>();
 
     public static void main(String[] args) throws IOException {
         List<String> argsList = new ArrayList<String>();
@@ -122,49 +132,98 @@ public class Log4JDetector {
                 }
             }
         }
-        argsList.addAll(stdinLines);
 
         if (argsList.isEmpty()) {
-            System.out.println();
-            System.out.println("Usage: java -jar log4j-detector-2021.12.20.jar [--verbose] [--json] [--stdin] [--exclude=X] [paths to scan...]");
-            System.out.println();
-            System.out.println("  --json       - Output STDOUT results in JSON.  (Errors/warning still emitted to STDERR)");
-            System.out.println("  --stdin      - Parse STDIN for paths to explore.");
-            System.out.println("  --exclude=X  - Where X is a JSON list containing full paths to exclude. Must be valid JSON.");
-            System.out.println();
-            System.out.println("                 Example: --excludes=[\"/dev\", \"/media\", \"Z:\\TEMP\"]");
-            System.out.println();
-            System.out.println("Exit codes:  0 = No vulnerable Log4J versions found.");
-            System.out.println("             1 = At least one legacy Log4J 1.x version found.");
-            System.out.println("             2 = At least one vulnerable Log4J 2.x version found.");
-            System.out.println();
-            System.out.println("About - MergeBase log4j detector (version 2021.12.20)");
-            System.out.println("Docs  - https://github.com/mergebase/log4j-detector ");
-            System.out.println("(C) Copyright 2021 Mergebase Software Inc. Licensed to you via GPLv3.");
-            System.out.println();
-            System.exit(100);
+        	// scan all paths on windows
+        	String osName = System.getProperty("os.name").toLowerCase();
+        	if (osName.contains("win")) {
+                FileSystemView fsv = FileSystemView.getFileSystemView();
+                
+                File[] drives = File.listRoots();
+                boolean localDiskFound = false;
+                if (drives != null && drives.length > 0) {
+                    for (File aDrive : drives) {
+                    	String driveType = fsv.getSystemTypeDescription(aDrive);
+                    	if (TYPE_LOCAL_DISK_GERMAN.equals(driveType) || TYPE_LOCAL_DISK_ENGLISH.equals(driveType)) {
+                        	localDiskFound = true;
+                    		argsList.add(aDrive.toString());
+                    	}
+                    }
+                }
+                
+                if (!localDiskFound) {
+                	System.out.println("No local disk found to scan. Please use path argument for next scan, e.g. : c:\\");
+                	System.exit(102);
+                }
+                
+                System.out.println("No arguments provided. Scanning all local disks: " + argsList.toString());
+        	} else {
+                System.out.println();
+                System.out.println("Usage: java -jar log4j-detector-2021.12.20.jar [--verbose] [--json] [--stdin] [--exclude=X] [paths to scan...]");
+                System.out.println();
+                System.out.println("  --json       - Output STDOUT results in JSON.  (Errors/warning still emitted to STDERR)");
+                System.out.println("  --stdin      - Parse STDIN for paths to explore.");
+                System.out.println("  --exclude=X  - Where X is a JSON list containing full paths to exclude. Must be valid JSON.");
+                System.out.println();
+                System.out.println("                 Example: --excludes=[\"/dev\", \"/media\", \"Z:\\TEMP\"]");
+                System.out.println();
+                System.out.println("Exit codes:  0 = No vulnerable Log4J versions found.");
+                System.out.println("             1 = At least one legacy Log4J 1.x version found.");
+                System.out.println("             2 = At least one vulnerable Log4J 2.x version found.");
+                System.out.println();
+                System.out.println("About - MergeBase log4j detector (version 2021.12.20)");
+                System.out.println("Docs  - https://github.com/mergebase/log4j-detector ");
+                System.out.println("(C) Copyright 2021 Mergebase Software Inc. Licensed to you via GPLv3.");
+                System.out.println();
+                System.exit(100);
+        	}
         }
 
-        System.err.println("-- github.com/mergebase/log4j-detector v2021.12.20 (by mergebase.com) analyzing paths (could take a while).");
-        System.err.println("-- Note: specify the '--verbose' flag to have every file examined printed to STDERR.");
-        if (json) {
-            System.out.println("{\"hits\":[");
+        String reportFileName = System.getProperty("user.dir") + File.separator + System.getenv("COMPUTERNAME") + " - " + System.getProperty("user.name") + ".txt";
+        System.out.println("-- RUNNING SCAN. PLEASE BE PATIENT.. THIS MAY TAKE A LONG TIME. --");
+        System.out.println("-- REPORT FILE IS WRITTEN TO: " + reportFileName + " at the end of the scan --");
+        System.out.println();
+        
+        // close err stream to get rid of warn messages
+        System.err.close();
+        
+        try {
+			out = new BufferedWriter(new FileWriter(reportFileName));
+
+	        if (json) {
+	            System.out.println("{\"hits\":[");
+	        }
+            for (String arg : argsList) {
+                File dir = new File(arg);
+                analyze(dir, true);
+            }
+            
+            String vulMsg = "\n\nFinished scan.\n\nFound " + vulnerableFiles.size() + " critical vulnerabilities (Log4j 2.0-beta9 beta to 2.16.0).";
+            logToConsoleAndFile(vulMsg);
+            
+            if (!foundHits) {
+                logToConsoleAndFile("-- No vulnerable Log4J 2.x samples found in supplied paths: " + argsList);
+                System.out.println("-- Congratulations, the supplied paths are not vulnerable to CVE-2021-44228 or CVE-2021-45046 !  :-) ");
+            }
+        } catch(IOException exception) {
+        	System.out.println(exception);
+        } finally {
+        	try {
+				out.close();
+			} catch (IOException e) {
+				System.out.println(e);
+			}
         }
-        for (String arg : argsList) {
-            File dir = new File(arg);
-            analyze(dir);
-        }
-        if (json) {
-            System.out.println("{\"_THE_END_\":true}]}");
-        }
-        if (foundHits) {
-            System.exit(2);
-        } else if (foundLog4j1) {
-            System.exit(1);
-        } else {
-            System.err.println("-- No vulnerable Log4J 2.x samples found in supplied paths: " + argsList);
-            System.err.println("-- Congratulations, the supplied paths are not vulnerable to CVE-2021-44228 or CVE-2021-45046 !  :-) ");
-        }
+
+    }
+    
+    private static void logToConsoleAndFile(String message) {
+    	System.out.println(message);
+    	try {
+			out.write(message + "\n");
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
     }
 
     private static int[] pop4(InputStream in) throws IOException {
@@ -481,10 +540,12 @@ public class Log4JDetector {
                                     if (isLog4j2_17) {
                                         buf.append(">= 2.17.0 _SAFE_");
                                     } else if (isLog4j2_16) {
-                                        buf.append("== 2.16.0 _OKAY_");
+                                        buf.append("== 2.16.0 _VULNERABLE_");
+                                        vulnerableFiles.add(zipPath);
                                         foundHits = true;
                                     } else {
-                                        buf.append("== 2.15.0 _OKAY_");
+                                        buf.append("== 2.15.0 _VULNERABLE_");
+                                        vulnerableFiles.add(zipPath);
                                         foundHits = true;
                                     }
                                 }
@@ -498,13 +559,14 @@ public class Log4JDetector {
                         buf.append("<= 2.0-beta8 _POTENTIALLY_SAFE_ (Did you remove JndiLookup.class?)");
                     }
                     if (!isSafe) {
+                    	vulnerableFiles.add(zipPath);
                         foundHits = true;
                     }
-                    System.out.println(prepareOutput(zipPath, buf));
+                    logToConsoleAndFile(prepareOutput(zipPath, buf));
                 } else if (isLog4J1_X) {
                     buf.append(" contains Log4J-1.x   <= 1.2.17 _OLD_");
                     foundLog4j1 = true;
-                    System.out.println(prepareOutput(zipPath, buf));
+                    logToConsoleAndFile(prepareOutput(zipPath, buf));
                 }
             }
         } finally {
@@ -639,7 +701,7 @@ public class Log4JDetector {
 
     private static final HashSet<Long> visited = new HashSet<Long>();
 
-    private static void analyze(File f) {
+    private static void analyze(File f, boolean printDirectoryName) {
         try {
             f = f.getCanonicalFile();
         } catch (Exception e) {
@@ -683,7 +745,10 @@ public class Log4JDetector {
             if (fileList != null) {
                 Arrays.sort(fileList, FILES_ORDER_BY_NAME);
                 for (File ff : fileList) {
-                    analyze(ff);
+                	if (printDirectoryName && ff.isDirectory()) {
+                		System.out.println("Progress information: Scanning folder <" + ff + "> and subfolder.");
+                	}
+                    analyze(ff, false);
                 }
             }
         } else {
@@ -703,7 +768,7 @@ public class Log4JDetector {
                         StringBuilder buf = new StringBuilder();
                         String grandParent = f.getParentFile().getParent();
                         buf.append(" contains Log4J-1.x   <= 1.2.17 _OLD_ :-|");
-                        System.out.println(prepareOutput(grandParent, buf));
+                        logToConsoleAndFile(prepareOutput(grandParent, buf));
                     } else {
                         maybe = currentPathLower.endsWith(FILE_LOG4J_1);
                     }
@@ -766,10 +831,12 @@ public class Log4JDetector {
                                     buf.append(">= 2.17.0 _SAFE_");
                                 } else if (isLog4J_2_15) {
                                     if (isLog4J_2_16) {
-                                        buf.append("== 2.16.0 _OKAY_");
+                                        buf.append("== 2.16.0 _VULNERABLE_");
+                                        vulnerableFiles.add(f.getParentFile().getParent());
                                         foundHits = true;
                                     } else {
-                                        buf.append("== 2.15.0 _OKAY_");
+                                        buf.append("== 2.15.0 _VULNERABLE_");
+                                        vulnerableFiles.add(f.getParentFile().getParent());
                                         foundHits = true;
                                     }
                                 } else {
@@ -777,17 +844,19 @@ public class Log4JDetector {
                                         buf.append(">= 2.12.2 _SAFE_");
                                     } else {
                                         buf.append(">= 2.10.0 _VULNERABLE_");
+                                        vulnerableFiles.add(f.getParentFile().getParent());
                                         foundHits = true;
                                     }
                                 }
                             } else {
                                 buf.append(">= 2.0-beta9 (< 2.10.0) _VULNERABLE_");
+                                vulnerableFiles.add(f.getParentFile().getParent());
                                 foundHits = true;
                             }
                         } else {
                             buf.append("<= 2.0-beta8 _POTENTIALLY_SAFE_ (Did you remove JndiLookup.class?)");
                         }
-                        System.out.println(prepareOutput(f.getParentFile().getParent(), buf));
+                        logToConsoleAndFile(prepareOutput(f.getParentFile().getParent(), buf));
                     }
                 } else if (verbose) {
                     System.err.println("-- Skipping " + f.getPath() + " - Not a zip/jar/war file.");
