@@ -43,6 +43,9 @@ import java.util.zip.ZipInputStream;
 
 
 public class Log4JDetector {
+	
+	private static final String LOCAL_DISK_NAME_GERMAN = "Lokale Festplatte";
+	private static final String LOCAL_DISK_NAME_ENGLISH = "Local Fixed Disk";
 
 	private static final String POM_PROPERTIES = "log4j-core/pom.properties".toLowerCase(Locale.ROOT);
     private static final String FILE_OLD_LOG4J = "log4j/DailyRollingFileAppender.class".toLowerCase(Locale.ROOT);
@@ -135,7 +138,9 @@ public class Log4JDetector {
         	// scan all paths on windows
         	String osName = System.getProperty("os.name").toLowerCase();
         	if (osName.contains("win")) {                
-                argsList.addAll(getLocalHardDisks());
+                argsList.addAll(getLocalHardDisks(LOCAL_DISK_NAME_GERMAN));
+                argsList.addAll(getLocalHardDisks(LOCAL_DISK_NAME_ENGLISH));
+                
                 if (argsList.isEmpty()) {
                 	System.out.println("No local disk found to scan. Please use path argument for next scan, e.g. : c:\\");
                 	System.exit(102);
@@ -202,10 +207,10 @@ public class Log4JDetector {
 
     }
     
-    private static List<String> getLocalHardDisks() throws IOException {
+    private static List<String> getLocalHardDisks(String description) throws IOException {
 		List<String> drives = new ArrayList<String>();
 		String line;
-		Process p = Runtime.getRuntime().exec("wmic logicaldisk where description=\"Local Fixed Disk\" get caption");
+		Process p = Runtime.getRuntime().exec("wmic logicaldisk where description=\"" + description + "\" get caption");
 		BufferedReader output = new BufferedReader(new InputStreamReader(p.getInputStream()));
 
 		while ((line = output.readLine()) != null) {
