@@ -226,6 +226,7 @@ public class Log4JDetector {
     	System.out.println(message);
     	try {
 			out.write(message + "\n");
+			out.flush();
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
