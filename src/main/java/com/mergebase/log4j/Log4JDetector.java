@@ -134,10 +134,11 @@ public class Log4JDetector {
         }
         argsList.addAll(stdinLines);
 
+        String osName = System.getProperty("os.name").toLowerCase();
         if (argsList.isEmpty()) {
         	// scan all paths on windows
-        	String osName = System.getProperty("os.name").toLowerCase();
-        	if (osName.contains("win")) {                
+        	
+        	if (osName.contains("win")) {
                 argsList.addAll(getLocalHardDisks(LOCAL_DISK_NAME_GERMAN));
                 argsList.addAll(getLocalHardDisks(LOCAL_DISK_NAME_ENGLISH));
                 
@@ -147,7 +148,10 @@ public class Log4JDetector {
                 }
                 
                 System.out.println("No arguments provided. Scanning all local disks: " + argsList.toString());
+        	} else if (osName.contains("linux")) {
+        		argsList.add("/");
         	} else {
+        	
                 System.out.println();
                 System.out.println("Usage: java -jar log4j-detector-2021.12.20.jar [--verbose] [--json] [--stdin] [--exclude=X] [paths to scan...]");
                 System.out.println();
@@ -169,7 +173,15 @@ public class Log4JDetector {
         	}
         }
 
-        String reportFileName = System.getProperty("user.dir") + File.separator + System.getenv("COMPUTERNAME") + " - " + System.getProperty("user.name") + ".txt";
+        String computername = null;
+        if (osName.contains("win")) {
+        	computername = System.getenv("COMPUTERNAME");        	
+        } else {
+        	computername = System.getenv("HOSTNAME");
+        }
+        	
+		String reportFileName = System.getProperty("user.dir") + File.separator + computername + " - " + System.getProperty("user.name") + ".txt";
+        	
         System.out.println("-- RUNNING SCAN. PLEASE BE PATIENT.. THIS MAY TAKE A LONG TIME. --");
         System.out.println("-- REPORT FILE IS WRITTEN TO: " + reportFileName + " at the end of the scan --");
         System.out.println();
