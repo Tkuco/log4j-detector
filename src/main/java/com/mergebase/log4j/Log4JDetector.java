@@ -80,6 +80,7 @@ public class Log4JDetector {
 
     private static boolean verbose = false;
     private static boolean debug = false;
+    private static boolean errLog = false;
     private static boolean json = false;
     private static Set<String> excludes = new TreeSet<String>();
     private static boolean foundHits = false;
@@ -98,8 +99,8 @@ public class Log4JDetector {
             if ("--debug".equals(argOrig)) {
                 debug = true;
                 it.remove();
-            } else if ("--verbose".equals(argOrig)) {
-                verbose = true;
+            } else if ("--err-log".equals(argOrig)) {
+                errLog = true;
                 it.remove();
             } else if ("--json".equals(argOrig)) {
                 json = true;
@@ -187,7 +188,9 @@ public class Log4JDetector {
         System.out.println();
         
         // close err stream to get rid of warn messages
-        System.err.close();
+        if (!errLog) {
+        	System.err.close();
+        }
         
         try {
 			out = new BufferedWriter(new FileWriter(reportFileName));
@@ -393,7 +396,7 @@ public class Log4JDetector {
                 }
 
                 if (debug) {
-                    System.err.println("-- DEBUG - " + fullPath + " size=" + zipEntrySize + " isZip=" + isSubZip + " isClass=" + isClassEntry);
+                	System.err.println("-- DEBUG - " + fullPath + " size=" + zipEntrySize + " isZip=" + isSubZip + " isClass=" + isClassEntry);
                 }
                 byte[] b = new byte[0];
                 if (isSubZip || needClassBytes) {
